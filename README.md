@@ -38,6 +38,9 @@ Here are some examples to run.
 
 ```
 pathfinder TEST/sim_k1001.gfa
+pathfinder TEST/sim_k1001.gfa u10
+pathfinder TEST/sim_k1001.gfa u10-
+pathfinder TEST/sim_k1001.gfa u10- u11+
 
 pathfinder TEST/u2592_f-u2630_f.gfa
 
