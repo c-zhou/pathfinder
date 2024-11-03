@@ -68,10 +68,6 @@ this option, you must specify the source and target nodes.
 can be beneficial when sequence coverages do not correlate well with copy numbers. However, for very large graphs, 
 this option may lead to less accurate estimations.
 
-The `SUBGRAPH` part show the basic stats (`name`, `length`, and `coverage`) for the graph as well as the estimated 
-copy numbers for each sequence (`copyEstd`). It also shows the number of copies of each sequence included in the 
-results (`copyIncl`) and the difference compared to the expected (`copyDiff`).
-
 ## Outputs
 
 Below is the output from the command `pathfinder TEST/sim_k1001.gfa`
