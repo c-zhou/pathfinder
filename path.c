@@ -805,7 +805,8 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
                 }
             }
             total_lens += (double) g->vtx[i].len * copies / 2;
-            total_covs += (double) g->vtx[i].len * g->vtx[i].cov;
+            if (copies)
+                total_covs += (double) g->vtx[i].len * g->vtx[i].cov;
         }
     
         if (total_lens < FLT_EPSILON) {
