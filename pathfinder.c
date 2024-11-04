@@ -264,6 +264,7 @@ static int pathfinder(char *asg_file, int max_copy, double min_cfrac, int max_pa
                 fprintf(stderr, "[M::%s] adjusted copy number estimation\n", __func__);
                 print_copy_number(asg_copy, adjusted_avg_coverage, copy_number, mstr);
             }
+            avg_coverage = adjusted_avg_coverage;
         }
         
         // now do path finding
@@ -328,8 +329,10 @@ static int pathfinder(char *asg_file, int max_copy, double min_cfrac, int max_pa
                 print_path(path, asg, copy_number, s_source, s_target, mstr, out_file);
             else
                 print_path(path, asg, copy_number, s_source, s_target, mstr, stderr);
-        } else
+        } else {
+            print_copy_number(asg_copy, avg_coverage, copy_number, mstr);
             fprintf(stderr, "[W::%s] no valid path found in the graph\n", __func__);
+        }
         asg_destroy(asg_copy);
         path_destroy(path);
         free(path);

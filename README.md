@@ -44,10 +44,10 @@ pathfinder TEST/sim_k1001.gfa u10- u11+
 
 pathfinder TEST/u2592_f-u2630_f.gfa
 
-pathfinder TEST/u2045_f-u2163_f.gfa
-pathfinder -N20000000 TEST/u2045_f-u2163_f.gfa
-pathfinder -p TEST/u2045_f-u2163_f.gfa u2045+ u2163+
-pathfinder -a -p TEST/u2045_f-u2163_f.gfa u2045+ u2163+
+pathfinder TEST/u2045_f-u2163_f.gfa u2045+ u2163+
+pathfinder -N20000000 TEST/u2045_f-u2163_f.gfa u2045+ u2163+
+pathfinder -N20000000 -p TEST/u2045_f-u2163_f.gfa u2045+ u2163+
+pathfinder -N20000000 -p -a TEST/u2045_f-u2163_f.gfa u2045+ u2163+
 
 pathfinder -p TEST/u56_r-u144_f.gfa u56- u144
 # using two internal nodes u57 and u58

@@ -464,7 +464,7 @@ static inline void copy_results(var_t **vars, int n_var, int *res)
 }
 
 // brute force optimization
-static void estimate_arc_copy_number_brute_force_impl(func_t *funcs, int n_func, var_t **vars, int n_var, int *res, int64_t sol_space_size)
+static double estimate_arc_copy_number_brute_force_impl(func_t *funcs, int n_func, var_t **vars, int n_var, int *res, int64_t sol_space_size)
 {
     double fval, m_fval;
     int64_t sol;
@@ -492,6 +492,7 @@ static void estimate_arc_copy_number_brute_force_impl(func_t *funcs, int n_func,
     fprintf(stderr, "[DEBUG_BRUTE_FORCE_OPTIM::%s] brute force search finished after %ld/%ld attempts with a minimum fval: %.6f\n",
             __func__, sol, sol_space_size, m_fval);
 #endif
+    return m_fval;
 }
 
 #define SA_TEMPERATURE  1000
@@ -520,7 +521,7 @@ static void set_vars(var_t **vars, int n_var, int *res)
 }
 
 // simulated annealing optimization
-static void estimate_arc_copy_number_siman_impl(func_t *funcs, int n_func, var_t **vars, int n_var, int *res)
+static double estimate_arc_copy_number_siman_impl(func_t *funcs, int n_func, var_t **vars, int n_var, int *res)
 {
     int i, iter, n_iter;
     double optim_cost, current_cost, new_cost, temp0, temp, p;
@@ -576,6 +577,7 @@ static void estimate_arc_copy_number_siman_impl(func_t *funcs, int n_func, var_t
     fprintf(stderr, "[DEBUG_SIM_ANNEAL_OPTIM::%s] simulated annealing search finished after %d attempts with a minimum fval: %.6f\n",
             __func__, n_iter, optim_cost);
 #endif
+    return optim_cost;
 }
 
 int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage, double *_adjusted_cov, int *copy_number, int max_copy, int max_round)
@@ -748,7 +750,9 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
     // do optimization
     int *arc_copy;
     double adjusted_cov, min_avg_cov;
+    double optim_cost, curr_cost;
     int64_t sol_space_size;
+    int new_copy[2];
     
     min_avg_cov = graph_sequence_coverage_lower_bound(asg, 0.3);
     adjusted_cov = seq_coverage;
@@ -758,6 +762,7 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
     for (i = 0; i < n_group && sol_space_size <= BRUTE_FORCE_N_LIM; ++i)
         sol_space_size *= (arc_copy_ub[i] - arc_copy_lb[i] + 1);
     
+    optim_cost = fvals(funcs.a, funcs.n);
     round = 0;
     while (round++ < max_round) {
 #ifdef DEBUG_SEG_COV_ADJUST
@@ -769,14 +774,14 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
             fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] run brute force searching: %ld\n",
                     __func__, sol_space_size);
 #endif
-            estimate_arc_copy_number_brute_force_impl(funcs.a, funcs.n, VAR, n_group, arc_copy, sol_space_size);
+            curr_cost = estimate_arc_copy_number_brute_force_impl(funcs.a, funcs.n, VAR, n_group, arc_copy, sol_space_size);
         } else {
             // do simulated annealing optimization
 #ifdef DEBUG_SEG_COV_ADJUST
             fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] run simulated annealing optimization: %ld\n",
                     __func__, sol_space_size);
 #endif
-            estimate_arc_copy_number_siman_impl(funcs.a, funcs.n, VAR, n_group, arc_copy);
+            curr_cost = estimate_arc_copy_number_siman_impl(funcs.a, funcs.n, VAR, n_group, arc_copy);
         }
 
 #ifdef DEBUG_SEG_COV_ADJUST
@@ -784,6 +789,12 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
             fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] arc group %u optimum copy number %d [%u %u]\n",
                     __func__, i, arc_copy[i], arc_copy_lb[i], arc_copy_ub[i]);
 #endif
+
+        if (curr_cost >= optim_cost)
+            // the results is no better
+            break;
+        optim_cost = curr_cost;
+        
         // update average sequence coverage
         double total_covs, total_lens, new_adjusted_cov, copies;
         total_covs = total_lens = 0;
@@ -810,12 +821,13 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
         }
     
         if (total_lens < FLT_EPSILON) {
+            // no sequences included - not good
 #ifdef DEBUG_SEG_COV_ADJUST
             fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] zero copies for all sequences\n", __func__);
             fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] adjusting copy number terminated in round %d of %d\n",
                     __func__, round, max_round);
 #endif
-            goto do_clean;
+            break;
         }
 
         new_adjusted_cov = total_covs / total_lens;
@@ -829,8 +841,65 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
             break; // converaged
         }
 
+        // update sequence copy number using the arc copy number information
+        for (i = 0; i < n_seg; ++i) {
+            if (g->vtx[i].del)
+                continue;
+#ifdef DEBUG_SEG_COV_ADJUST
+            fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] #### sequence %s ####\n", __func__, asg->seg[i].name);
+#endif
+        for (k = 0; k < 2; ++k) {
+                v = i << 1 | k;
+                na = asmg_arc_n(g, v);
+                av = asmg_arc_a(g, v);
+                new_copy[k] = 0;
+#ifdef DEBUG_SEG_COV_ADJUST
+                fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] #### %sing arcs\n", __func__, k? "incom" : "outgo");
+#endif
+                for (j = 0; j < na; ++j) {
+                    if (av[j].del)
+                        continue;
+                    link_id = av[j].link_id;
+                    a_g = arc_group[link_id];
+                    assert(a_g != (uint32_t) -1);
+                    new_copy[k] += arc_copy[a_g];
+#ifdef DEBUG_SEG_COV_ADJUST
+                    fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] %s%c -> %s%c: %d\n", __func__,
+                            asg->seg[av[j].v>>1].name, "+-"[av[j].v&1],
+                            asg->seg[av[j].w>>1].name, "+-"[av[j].w&1],
+                            arc_copy[a_g]);
+#endif
+                }
+            }
+#ifdef DEBUG_SEG_COV_ADJUST
+            fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] indegree: %d;  outdegree: %d; diff: %d\n", __func__,
+                    new_copy[1], new_copy[0], abs(new_copy[1] - new_copy[0]));
+#endif
+            // only update copy number if indegree matches outdegree
+            // TODO better strategy to update sequence copy number
+            if (new_copy[0] == new_copy[1] && copy_number[i] != new_copy[0]) {
+#ifdef DEBUG_SEG_COV_ADJUST
+                fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] sequence %s copy number updated %d -> %d\n",
+                        __func__, asg->seg[i].name, copy_number[i], new_copy[0]);
+#endif
+                copy_number[i] = new_copy[0];
+                updated = 1;
+            }
+        }
+#ifdef DEBUG_SEG_COV_ADJUST
+        fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] sequence copy number AFTER adjusted by graph layout\n", __func__);
+        for (i = 0; i < n_seg; ++i) {
+            if (g->vtx[i].del) continue;
+            fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] %s %lu %u %d\n", __func__,
+                    asg->seg[i].name, g->vtx[i].len, g->vtx[i].cov, copy_number[i]);
+        }
+#endif
+
         // update adjusted sequence coverage
         adjusted_cov = new_adjusted_cov;
+        if (_adjusted_cov)
+            *_adjusted_cov = adjusted_cov;
+
         // update objective functions
         // more precisely the expected copy number
         for (i = 0; i < n_seg; ++i) {
@@ -852,65 +921,6 @@ int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage,
 #endif
     }
 
-    // update sequence copy number using the arc copy number information
-    int new_copy[2];
-    for (i = 0; i < n_seg; ++i) {
-        if (g->vtx[i].del)
-            continue;
-#ifdef DEBUG_SEG_COV_ADJUST
-        fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] #### sequence %s ####\n", __func__, asg->seg[i].name);
-#endif
-        for (k = 0; k < 2; ++k) {
-            v = i << 1 | k;
-            na = asmg_arc_n(g, v);
-            av = asmg_arc_a(g, v);
-            new_copy[k] = 0;
-#ifdef DEBUG_SEG_COV_ADJUST
-            fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] #### %sing arcs\n", __func__, k? "incom" : "outgo");
-#endif
-            for (j = 0; j < na; ++j) {
-                if (av[j].del)
-                    continue;
-                link_id = av[j].link_id;
-                a_g = arc_group[link_id];
-                assert(a_g != (uint32_t) -1);
-                new_copy[k] += arc_copy[a_g];
-#ifdef DEBUG_SEG_COV_ADJUST
-                fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] %s%c -> %s%c: %d\n", __func__, 
-                        asg->seg[av[j].v>>1].name, "+-"[av[j].v&1],
-                        asg->seg[av[j].w>>1].name, "+-"[av[j].w&1],
-                        arc_copy[a_g]);
-#endif
-            }
-        }
-#ifdef DEBUG_SEG_COV_ADJUST
-        fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] indegree: %d;  outdegree: %d; diff: %d\n", __func__, 
-                new_copy[1], new_copy[0], abs(new_copy[1] - new_copy[0]));
-#endif
-        // only update copy number if indegree matches outdegree
-        // TODO better strategy to update sequence copy number
-        if (new_copy[0] == new_copy[1] && copy_number[i] != new_copy[0]) {
-#ifdef DEBUG_SEG_COV_ADJUST
-            fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] sequence %s copy number updated %d -> %d\n",
-                    __func__, asg->seg[i].name, copy_number[i], new_copy[0]);
-#endif
-            copy_number[i] = new_copy[0];
-            updated = 1;
-        }
-    }
-#ifdef DEBUG_SEG_COV_ADJUST
-    fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] sequence copy number AFTER adjusted by graph layout\n", __func__);
-    for (i = 0; i < n_seg; ++i) {
-        if (g->vtx[i].del) continue;
-        fprintf(stderr, "[DEBUG_SEG_COV_ADJUST::%s] %s %lu %u %d\n", __func__, 
-                asg->seg[i].name, g->vtx[i].len, g->vtx[i].cov, copy_number[i]);
-    }
-#endif
-    
-    if (_adjusted_cov)
-        *_adjusted_cov = adjusted_cov;
-
-do_clean:
     for (i = 0; i < n_group; ++i) {
         var_t *var0, *var1;
         var0 = VAR[i];
