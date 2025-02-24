@@ -40,6 +40,9 @@
 #include "path.h"
 #include "graph.h"
 
+// Minimum global kmer coverage
+int global_avg_cov = 0;
+
 #define PATHFINDER_VERSION "0.1"
 
 #define DEFAULT_MAX_PATH 10000000
@@ -221,13 +224,13 @@ static void asg_clean(asg_t *asg, uint32_t min_ec, uint32_t min_sc)
     asmg_finalize(g, 0);
 }
 
-static int pathfinder(char *asg_file, int min_copy, int max_copy, int min_ec, double min_sc, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int VERBOSE)
+static int pathfinder(char *asg_file, int min_copy, int max_copy, int min_edge_cov, int min_ec, double min_sc, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int VERBOSE)
 {   
     asg_t *asg;
     int64_t source, target;
     int i, j, mstr, ret = 0;
     
-    asg = asg_read(asg_file);
+    asg = asg_read(asg_file, min_copy, min_edge_cov);
     if (asg == 0) {
         fprintf(stderr, "[E::%s] failed to read the graph: %s\n", __func__, asg_file);
         return 1;
@@ -284,6 +287,7 @@ static int pathfinder(char *asg_file, int min_copy, int max_copy, int min_ec, do
             fprintf(stderr, "[M::%s] initial copy number estimation\n", __func__);
             print_copy_number(asg_copy, avg_coverage, copy_number, mstr);
         }
+
         // adjust estimation considering graph structure
         if (do_adjust) {
             adjust_sequence_copy_number_by_graph_layout(asg_copy, avg_coverage, &adjusted_avg_coverage, copy_number, max_copy, 10);
@@ -389,9 +393,9 @@ static ko_longopt_t long_options[] = {
 
 int main(int argc, char *argv[])
 {
-    const char *opt_str = "ac:d:hN:o:pv:V";
+    const char *opt_str = "ac:d:hN:o:pv:VC:X:e:";
     ketopt_t opt = KETOPT_INIT;
-    int c, min_copy, max_copy, max_path, min_ec, do_part, do_adjust, ret = 0;
+    int c, min_copy, max_copy, max_path, min_ec, min_edge_cov, do_part, do_adjust, ret = 0;
     FILE *fp_help;
     char *out_file, *ec_tag, *kc_tag, *sc_tag, *source, *target;
     double min_cfrac, min_sc;
@@ -411,12 +415,15 @@ int main(int argc, char *argv[])
     do_adjust = 0;
     min_cfrac = 1.;
     min_copy = 1;
+    min_edge_cov = 1;
     max_copy = DEFAULT_MAX_COPY;
     max_path = DEFAULT_MAX_PATH;
 
     while ((c = ketopt(&opt, argc, argv, 1, opt_str, long_options)) >=0) {
         if (c == 'c') min_copy = atoi(opt.arg);
         else if (c == 'C') max_copy = atoi(opt.arg);
+        else if (c == 'e') min_edge_cov = atoi(opt.arg);
+        else if (c == 'X') global_avg_cov = atoi(opt.arg);
         else if (c == 'd') min_cfrac = atof(opt.arg);
         else if (c == 'N') max_path = atoi(opt.arg);
         else if (c == 'p') do_part = 1;
@@ -447,8 +454,10 @@ int main(int argc, char *argv[])
         fprintf(fp_help, "\n");
         fprintf(fp_help, "Usage: pathfinder [options] <file>[.gfa[.gz]] [<source>[+|-] [<target>[+|-]]]\n");
         fprintf(fp_help, "Options:\n");
+        fprintf(fp_help, "  -e INT               minimum L edge coverage [%d]\n", min_edge_cov);
         fprintf(fp_help, "  -c INT               minimum copy number of sequences to consider [%d]\n", min_copy);
         fprintf(fp_help, "  -C INT               maximum copy number of sequences to consider [%d]\n", max_copy);
+        fprintf(fp_help, "  -X INT               override the initial depth computation [%d]\n", global_avg_cov);
         fprintf(fp_help, "  -d FLOAT             prefer a circular path if length >= FLOAT * linear length [%.2f]\n", min_cfrac);
         fprintf(fp_help, "  -p                   do graph partitioning if possible\n");
         fprintf(fp_help, "  -a                   adjust seuqnece copy number estimation by graph structure\n");
@@ -518,7 +527,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    ret = pathfinder(argv[opt.ind], min_copy, max_copy, min_ec, min_sc, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, VERBOSE);
+    ret = pathfinder(argv[opt.ind], min_copy, max_copy, min_edge_cov, min_ec, min_sc, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, VERBOSE);
     
     if (ret) {
         fprintf(stderr, "[E::%s] failed to analysis the GFA file\n", __func__);

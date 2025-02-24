@@ -17,8 +17,10 @@ directory to compile.
 ```
 Usage: pathfinder [options] <file>[.gfa[.gz]] [<source>[+|-] [<target>[+|-]]]
 Options:
+  -e INT               minimum L edge coverage [1]
   -c INT               minimum copy number of sequences to consider [1]
   -C INT               maximum copy number of sequences to consider [10]
+  -X INT               override the initial depth computation [0]
   -d FLOAT             prefer a circular path if length >= FLOAT * linear length [1.00]
   -p                   do graph partitioning if possible
   -a                   adjust seuqnece copy number estimation by graph structure

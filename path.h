@@ -82,7 +82,7 @@ extern "C" {
 asg_t *asg_init();
 void asg_destroy(asg_t *g);
 uint32_t asg_name2id(asg_t *g, char *name);
-asg_t *asg_read(const char *fn);
+asg_t *asg_read(const char *fn, int min_s_cov, int min_l_cov);
 asg_t *asg_make_copy(asg_t *g);
 asmg_t *asg_make_asmg_copy(asmg_t *g, asmg_t *_g);
 uint32_t asg_add_seg(asg_t *g, char *name, int allow_dups);
