@@ -198,7 +198,7 @@ static uint64_t *parse_domi_path(uint64_t *domi_tree, uint64_t source, uint64_t 
     return path.a;
 }
 
-static int pathfinder(char *asg_file, int max_copy, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int VERBOSE)
+static int pathfinder(char *asg_file, int min_copy, int max_copy, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int VERBOSE)
 {   
     asg_t *asg;
     int64_t source, target;
@@ -252,7 +252,7 @@ static int pathfinder(char *asg_file, int max_copy, double min_cfrac, int max_pa
         
         double avg_coverage, adjusted_avg_coverage;
         // initial guess of sequence copy numbers
-        avg_coverage = graph_sequence_coverage_precise(asg_copy, 0, 1, max_copy, &copy_number);
+        avg_coverage = graph_sequence_coverage_precise(asg_copy, 0, min_copy, max_copy, &copy_number);
         if (VERBOSE > 1) {
             fprintf(stderr, "[M::%s] initial copy number estimation\n", __func__);
             print_copy_number(asg_copy, avg_coverage, copy_number, mstr);
@@ -362,7 +362,7 @@ int main(int argc, char *argv[])
 {
     const char *opt_str = "ac:d:hN:o:pv:V";
     ketopt_t opt = KETOPT_INIT;
-    int c, max_copy, max_path, do_part, do_adjust, ret = 0;
+    int c, min_copy, max_copy, max_path, do_part, do_adjust, ret = 0;
     FILE *fp_help;
     char *out_file, *ec_tag, *kc_tag, *sc_tag, *source, *target;
     double min_cfrac;
@@ -379,11 +379,13 @@ int main(int argc, char *argv[])
     do_part = 0;
     do_adjust = 0;
     min_cfrac = 1.;
+    min_copy = 1;
     max_copy = DEFAULT_MAX_COPY;
     max_path = DEFAULT_MAX_PATH;
 
-    while ((c = ketopt(&opt, argc, argv, 1, opt_str, long_options)) >=0 ) {
-        if (c == 'c') max_copy = atoi(opt.arg);
+    while ((c = ketopt(&opt, argc, argv, 1, opt_str, long_options)) >=0) {
+        if (c == 'c') min_copy = atoi(opt.arg);
+        else if (c == 'C') max_copy = atoi(opt.arg);
         else if (c == 'd') min_cfrac = atof(opt.arg);
         else if (c == 'N') max_path = atoi(opt.arg);
         else if (c == 'p') do_part = 1;
@@ -412,7 +414,8 @@ int main(int argc, char *argv[])
         fprintf(fp_help, "\n");
         fprintf(fp_help, "Usage: pathfinder [options] <file>[.gfa[.gz]] [<source>[+|-] [<target>[+|-]]]\n");
         fprintf(fp_help, "Options:\n");
-        fprintf(fp_help, "  -c INT               maximum copy number of sequences to consider [%d]\n", max_copy);
+        fprintf(fp_help, "  -c INT               minimum copy number of sequences to consider [%d]\n", min_copy);
+        fprintf(fp_help, "  -C INT               maximum copy number of sequences to consider [%d]\n", max_copy);
         fprintf(fp_help, "  -d FLOAT             prefer a circular path if length >= FLOAT * linear length [%.2f]\n", min_cfrac);
         fprintf(fp_help, "  -p                   do graph partitioning if possible\n");
         fprintf(fp_help, "  -a                   adjust seuqnece copy number estimation by graph structure\n");
@@ -479,7 +482,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    ret = pathfinder(argv[opt.ind], max_copy, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, VERBOSE);
+    ret = pathfinder(argv[opt.ind], min_copy, max_copy, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, VERBOSE);
     
     if (ret) {
         fprintf(stderr, "[E::%s] failed to analysis the GFA file\n", __func__);
