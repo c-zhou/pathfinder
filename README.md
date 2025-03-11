@@ -95,7 +95,7 @@ SUBGRAPH node name length coverage copyEstd copyIncl copyDiff
 [  15] u14      65102        100    1    1    0
 [  16] u15      11036        200    2    2    0
 [  17] u16       1375        200    2    2    0
-PATH node name [source=NULL target=NULL nv=27 len=523284 wlen=63725707 circ=true]
+PATH node name [source=NULL target=NULL nv=27 len=523284 wlen=63725707 ec=3676 circ=true]
 [   1]  u5+
 [   2] u16+
 [   3]  u9-
@@ -133,4 +133,4 @@ included in the results (`copyIncl`) and the difference from the expected copy n
 
 The `PATH` section gives the actual path. The `PATH` header line shows some basic statistics, including `nv` for 
 the total number of vertices, `len` for the path length in base pairs, `wlen` for the size weighted by sequence 
-coverages, and `circ` to indicate whether the path is circular.
+coverages, `ec` for total number of reads spanning edges, and `circ` to indicate whether the path is circular.
