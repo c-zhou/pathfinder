@@ -28,6 +28,9 @@ Options:
   --kmer-c-tag  STR    kmer coverage tag in the GFA file [KC:i] 
   --seq-c-tag   STR    sequence coverage tag in the GFA file [SC:f]
  
+  --min-edge-cov INT   remove edges with coverage smaller than INT [0]
+  --min-seq-cov  FLOAT remove sequences with coverage smaller than FLOAT [0.0]
+
   -o FILE              write output to a file [stdout]
   -v INT               verbose level [0]
   --version            show version number

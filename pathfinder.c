@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <assert.h>
 #include <errno.h>
 
@@ -198,7 +199,29 @@ static uint64_t *parse_domi_path(uint64_t *domi_tree, uint64_t source, uint64_t 
     return path.a;
 }
 
-static int pathfinder(char *asg_file, int min_copy, int max_copy, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int VERBOSE)
+static void asg_clean(asg_t *asg, uint32_t min_ec, uint32_t min_sc)
+{
+    if (!asg) return;
+
+    uint64_t i, nv, na;
+    asmg_t *g;
+    asmg_arc_t *a;
+
+    nv = asg->n_seg;
+    g  = asg->asmg;
+    na = g->n_arc;
+    for (i = 0; i < nv; i++)
+        if (asg->seg[i].cov < min_sc) 
+            asmg_vtx_del(g, i, 1);
+    for (i = 0; i < na; i++) {
+        a = &g->arc[i];
+        if (!a->del && a->cov < min_ec)
+            a->del = 1;
+    }
+    asmg_finalize(g, 0);
+}
+
+static int pathfinder(char *asg_file, int min_copy, int max_copy, int min_ec, double min_sc, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int VERBOSE)
 {   
     asg_t *asg;
     int64_t source, target;
@@ -209,6 +232,10 @@ static int pathfinder(char *asg_file, int min_copy, int max_copy, double min_cfr
         fprintf(stderr, "[E::%s] failed to read the graph: %s\n", __func__, asg_file);
         return 1;
     }
+
+    if (min_ec < 0) min_ec = 0;
+    if (min_sc < 0) min_sc = 0.;
+    asg_clean(asg, (uint32_t) min_ec, (uint32_t) ceil(min_sc));
 
     mstr = 0;
     for (i = 0; i < asg->n_seg; i++)
@@ -350,6 +377,8 @@ static ko_longopt_t long_options[] = {
     { "edge-c-tag",     ko_required_argument, 301 },
     { "kmer-c-tag",     ko_required_argument, 302 },
     { "seq-c-tag",      ko_required_argument, 303 },
+    { "min-edge-cov",   ko_required_argument, 304 },
+    { "min-seq-cov",    ko_required_argument, 305 },
     { "max-copy",       ko_required_argument, 'c' },
     { "max-path",       ko_required_argument, 'N' },
     { "verbose",        ko_required_argument, 'v' },
@@ -362,10 +391,10 @@ int main(int argc, char *argv[])
 {
     const char *opt_str = "ac:d:hN:o:pv:V";
     ketopt_t opt = KETOPT_INIT;
-    int c, min_copy, max_copy, max_path, do_part, do_adjust, ret = 0;
+    int c, min_copy, max_copy, max_path, min_ec, do_part, do_adjust, ret = 0;
     FILE *fp_help;
     char *out_file, *ec_tag, *kc_tag, *sc_tag, *source, *target;
-    double min_cfrac;
+    double min_cfrac, min_sc;
 
     sys_init();
 
@@ -376,6 +405,8 @@ int main(int argc, char *argv[])
     ec_tag = 0;
     kc_tag = 0;
     sc_tag = 0;
+    min_ec = 0;
+    min_sc = .0;
     do_part = 0;
     do_adjust = 0;
     min_cfrac = 1.;
@@ -394,6 +425,8 @@ int main(int argc, char *argv[])
         else if (c == 301) ec_tag = opt.arg;
         else if (c == 302) kc_tag = opt.arg;
         else if (c == 303) sc_tag = opt.arg;
+        else if (c == 304) min_ec = atoi(opt.arg);
+        else if (c == 305) min_sc = atof(opt.arg);
         else if (c == 'v') VERBOSE = atoi(opt.arg);
         else if (c == 'h') fp_help = stdout;
         else if (c == 'V') {
@@ -420,10 +453,13 @@ int main(int argc, char *argv[])
         fprintf(fp_help, "  -p                   do graph partitioning if possible\n");
         fprintf(fp_help, "  -a                   adjust seuqnece copy number estimation by graph structure\n");
         fprintf(fp_help, "  -N INT               maximum number of graph paths to explore [%d]\n", max_path);
-        fprintf(fp_help, " \n");
+        fprintf(fp_help,  "\n");
         fprintf(fp_help, "  --edge-c-tag  STR    edge coverage tag in the GFA file [EC:i] \n");
         fprintf(fp_help, "  --kmer-c-tag  STR    kmer coverage tag in the GFA file [KC:i] \n");
         fprintf(fp_help, "  --seq-c-tag   STR    sequence coverage tag in the GFA file [SC:f]\n");
+        fprintf(fp_help, " \n");
+        fprintf(fp_help, "  --min-edge-cov INT   remove edges with coverage smaller than INT [%d]\n", min_ec);
+        fprintf(fp_help, "  --min-seq-cov  FLOAT remove sequences with coverage smaller than FLOAT [%.1f]\n", min_sc);
         fprintf(fp_help, " \n");
         fprintf(fp_help, "  -o FILE              write output to a file [stdout]\n");
         fprintf(fp_help, "  -v INT               verbose level [%d]\n", VERBOSE);
@@ -482,7 +518,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    ret = pathfinder(argv[opt.ind], min_copy, max_copy, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, VERBOSE);
+    ret = pathfinder(argv[opt.ind], min_copy, max_copy, min_ec, min_sc, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, VERBOSE);
     
     if (ret) {
         fprintf(stderr, "[E::%s] failed to analysis the GFA file\n", __func__);
