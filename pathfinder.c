@@ -165,8 +165,8 @@ static void print_path(path_t *path, asg_t *asg, int *copy_number, char *s_sourc
         seg = &asg->seg[i];
         fprintf(out, "[%4u] %*s %10u %10u %4d %4u %4d\n", ++j, mstr, seg->name, seg->len, seg->cov, copy_number[i], copy[i], (int32_t)copy[i]-copy_number[i]);
     }
-    fprintf(out, "PATH node name [source=%s target=%s nv=%u len=%u wlen=%.0f circ=%s]\n", 
-        s_source? s_source : "NULL", s_target? s_target : "NULL", path->nv, path->len, path->wlen, path->circ? "true" : "false");
+    fprintf(out, "PATH node name [source=%s target=%s nv=%u len=%u wlen=%.0f ec=%u circ=%s]\n", 
+        s_source? s_source : "NULL", s_target? s_target : "NULL", path->nv, path->len, path->wlen, path->ec, path->circ? "true" : "false");
     for (i = 0, nv = path->nv; i < nv; i++) {
         v = path->v[i];
         fprintf(out, "[%4u] %*s%c\n", i+1, mstr, asg->seg[v>>1].name, "+-"[v&1]);

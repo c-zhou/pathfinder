@@ -69,7 +69,8 @@ typedef struct {
     uint32_t nv:30, circ:1, best:1;
     uint32_t *v;
     uint32_t len;
-    double wlen;
+    double wlen; // weighted sequence length
+    uint32_t ec; // edge coverage
 } path_t;
 
 typedef struct {size_t n, m; path_t *a;} path_v;

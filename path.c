@@ -1317,12 +1317,8 @@ path_t *graph_path_finder_bfs(asg_t *asg, kh_u32_t *seg_dups, double min_cfrac, 
     fprintf(stderr, "[DEBUG_PATH_FINDER::%s] number leaf nodes: %lu\n", __func__, leaf_node.n);
 #endif
 
-    kvec_t(uint32_t) path, beg, end;
-    kvec_t(uint64_t) seg;
+    kvec_t(uint32_t) path;
     kv_init(path);
-    kv_init(beg);
-    kv_init(end);
-    kv_init(seg);
     best_cpath = best_lpath = NULL;
     for (i = 0; i < leaf_node.n; ++i) {
         node = leaf_node.a[i];
@@ -1365,27 +1361,23 @@ path_t *graph_path_finder_bfs(asg_t *asg, kh_u32_t *seg_dups, double min_cfrac, 
 
         // calculate sequence length
         asmg_arc_t *a;
-        uint64_t l, l1, *l_seg;
-        uint32_t *l_beg, *l_end;
+        uint64_t l, l1;
+        uint32_t ec;
         double cov, wl;
         
-        kv_resize(uint64_t, seg, path.n);
-        l_seg = seg.a;
-        l_seg[0] = g->vtx[path.a[0]>>1].len;
-        l = l_seg[0];
+        l = g->vtx[path.a[0]>>1].len;
         cov = g->vtx[path.a[0]>>1].cov;
         wl = cov * l;
+        ec = 0;
         for (j = 1; j < path.n; ++j) {
             a = asmg_arc1(g, path.a[j-1], path.a[j]);
             assert(!!a);
-            l_seg[j-1] = l_seg[j-1] << 32 | a->ls;
-            l_seg[j] = g->vtx[path.a[j]>>1].len;
-            l1 = l_seg[j] - a->ls;
+            l1 = g->vtx[path.a[j]>>1].len - a->ls;
             cov = g->vtx[path.a[j]>>1].cov;
             l += l1;
             wl += cov * l1;
+            ec += a->cov;
         }
-        l_seg[path.n-1] <<= 32;
         
         if (circ) {
             a = asmg_arc1(g, path.a[path.n-1], path.a[0]);
@@ -1394,17 +1386,7 @@ path_t *graph_path_finder_bfs(asg_t *asg, kh_u32_t *seg_dups, double min_cfrac, 
             cov = g->vtx[path.a[0]>>1].cov;
             l -= l1;
             wl -= cov * l1;
-        } else {
-            kv_resize(uint32_t, beg, path.n);
-            kv_resize(uint32_t, end, path.n);
-            l_beg = beg.a;
-            l_end = end.a;
-            l_beg[0] = 0;
-            for (j = 1; j < path.n; ++j)
-                l_beg[j] = l_beg[j-1] + (l_seg[j-1] >> 32) - (uint32_t) l_seg[j-1];
-            for (j = 0; j < path.n; ++j) 
-                l_end[j] = l - l_beg[j] - (l_seg[j] >> 32);
-            assert(l_end[path.n-1] == 0);
+            ec += a->cov;
         }
 
         int replace = 0;
@@ -1416,6 +1398,8 @@ path_t *graph_path_finder_bfs(asg_t *asg, kh_u32_t *seg_dups, double min_cfrac, 
                     replace = best_cpath->wlen < wl;
                 else if (best_cpath->len != l)
                     replace = best_cpath->len < l;
+                else if (best_cpath->ec != ec)
+                    replace = best_cpath->ec < ec;
                 else replace = best_cpath->nv < path.n;
         } else {
             if (best_lpath == NULL)
@@ -1425,6 +1409,8 @@ path_t *graph_path_finder_bfs(asg_t *asg, kh_u32_t *seg_dups, double min_cfrac, 
                     replace = best_lpath->wlen < wl;
                 else if (best_lpath->len != l)
                     replace = best_lpath->len < l;
+                else if (best_lpath->ec != ec)
+                    replace = best_lpath->ec < ec;
                 else replace = best_lpath->nv < path.n;
         }
 
@@ -1449,6 +1435,7 @@ path_t *graph_path_finder_bfs(asg_t *asg, kh_u32_t *seg_dups, double min_cfrac, 
             best_path->nv = path.n;
             best_path->len = l;
             best_path->wlen = wl;
+            best_path->ec = ec;
         }
     }
 
@@ -1469,9 +1456,6 @@ path_t *graph_path_finder_bfs(asg_t *asg, kh_u32_t *seg_dups, double min_cfrac, 
     }
 
     kv_destroy(path);
-    kv_destroy(beg);
-    kv_destroy(end);
-    kv_destroy(seg);
 
 final_clean:
     for (i = 0; i < root_node.n; ++i)
@@ -1646,6 +1630,7 @@ path_t *graph_path_finder_dfs(asg_t *asg, int *copy_number, double min_cfrac, in
     double cov, wl;
     asmg_arc_t *a;
     uint64_t l, l1;
+    uint32_t ec;
     best_cpath = best_lpath = NULL;
     for (i = 0; i < paths.n; ++i) {
         vs = paths.a[i].a;
@@ -1681,6 +1666,7 @@ path_t *graph_path_finder_dfs(asg_t *asg, int *copy_number, double min_cfrac, in
         l = g->vtx[vs[0]>>1].len;
         cov = g->vtx[vs[0]>>1].cov;
         wl = cov * l;
+        ec = 0;
         for (j = 1; j < vn; ++j) {
             a = asmg_arc1(g, vs[j-1], vs[j]);
             //assert(!!a);
@@ -1688,6 +1674,7 @@ path_t *graph_path_finder_dfs(asg_t *asg, int *copy_number, double min_cfrac, in
             cov = g->vtx[vs[j]>>1].cov;
             l += l1;
             wl += cov * l1;
+            ec += a->cov;
         }
         
         if (circ) {
@@ -1697,6 +1684,7 @@ path_t *graph_path_finder_dfs(asg_t *asg, int *copy_number, double min_cfrac, in
             cov = g->vtx[vs[0]>>1].cov;
             l -= l1;
             wl -= cov * l1;
+            ec += a->cov;
         }
 
         int replace = 0;
@@ -1708,6 +1696,8 @@ path_t *graph_path_finder_dfs(asg_t *asg, int *copy_number, double min_cfrac, in
                     replace = best_cpath->wlen < wl;
                 else if (best_cpath->len != l)
                     replace = best_cpath->len < l;
+                else if (best_cpath->ec != ec)
+                    replace = best_cpath->ec < ec;
                 else replace = best_cpath->nv < vn;
         } else {
             if (best_lpath == NULL)
@@ -1717,6 +1707,8 @@ path_t *graph_path_finder_dfs(asg_t *asg, int *copy_number, double min_cfrac, in
                     replace = best_lpath->wlen < wl;
                 else if (best_lpath->len != l)
                     replace = best_lpath->len < l;
+                else if (best_lpath->ec != ec)
+                    replace = best_lpath->ec < ec;
                 else replace = best_lpath->nv < vn;
         }
 
@@ -1733,6 +1725,7 @@ path_t *graph_path_finder_dfs(asg_t *asg, int *copy_number, double min_cfrac, in
             best_path->nv = vn;
             best_path->len = l;
             best_path->wlen = wl;
+            best_path->ec = ec;
             paths.a[i].a = NULL; // vs
         }
     }
@@ -1767,7 +1760,7 @@ void path_report(asg_t *asg, path_t *path)
     if (path == NULL || path->nv == 0)
         return;
 
-    uint32_t i, vn, circ, *vs;
+    uint32_t i, vn, ec, circ, *vs;
     uint64_t l, l1;
     double cov, wl;
     asmg_t *g;
@@ -1783,6 +1776,7 @@ void path_report(asg_t *asg, path_t *path)
     l = g->vtx[vs[0]>>1].len;
     cov = g->vtx[vs[0]>>1].cov;
     wl = cov * l;
+    ec = 0;
     for (i = 1; i < vn; ++i) {
         a = asmg_arc1(g, vs[i-1], vs[i]);
         //assert(!!a);
@@ -1790,6 +1784,7 @@ void path_report(asg_t *asg, path_t *path)
         cov = g->vtx[vs[i]>>1].cov;
         l += l1;
         wl += cov * l1;
+        ec += a->cov;
     }
     
     if (circ) {
@@ -1799,11 +1794,13 @@ void path_report(asg_t *asg, path_t *path)
         cov = g->vtx[vs[0]>>1].cov;
         l -= l1;
         wl -= cov * l1;
+        ec += a->cov;
     }
 
     path->circ = circ;
     path->len = l;
     path->wlen = wl;
+    path->ec = ec;
 }
 
 static int pcmpfunc(const void *a, const void *b)
@@ -1815,6 +1812,8 @@ static int pcmpfunc(const void *a, const void *b)
         return (x.wlen < y.wlen) - (x.wlen > y.wlen);
     if (x.len != y.len)
         return (x.len < y.len) - (x.len > y.len);
+    if (x.ec != y.ec)
+        return (x.ec < y.ec) - (x.ec > y.ec);
     if (x.nv != y.nv)
         return (x.nv < y.nv) - (x.nv > y.nv);
 
@@ -1876,13 +1875,15 @@ path_t make_path_from_str(asg_t *asg, char *path_str, char *sid)
     size_t i;
     asmg_t *g;
     asmg_arc_t *a;
+    uint32_t ec;
     g = asg->asmg;
     a = asmg_arc1(g, vt.a[vt.n-1], vt.a[0]);
     circ = !!a;
     len = g->vtx[vt.a[0]>>1].len;
     cov = g->vtx[vt.a[0]>>1].cov;
     wlen = (double) cov * len;
-    if (circ) len -= a->ls, wlen -= cov * a->ls;
+    ec = 0;
+    if (circ) len -= a->ls, wlen -= cov * a->ls, ec += a->cov;
     for (i = 1; i < vt.n; ++i) {
         len1 = g->vtx[vt.a[i]>>1].len;
         cov = g->vtx[vt.a[i]>>1].cov;
@@ -1896,10 +1897,11 @@ path_t make_path_from_str(asg_t *asg, char *path_str, char *sid)
         } else {
             len -= a->ls;
             wlen -= (double) cov * a->ls;
+            ec += a->cov;
         }
     }
 
-    path_t path = {sid? strdup1(sid, strlen(sid)) : 0, vt.n, circ, 0, vt.a, len, wlen};
+    path_t path = {sid? strdup1(sid, strlen(sid)) : 0, vt.n, circ, 0, vt.a, len, wlen, ec};
     
     return path;
 }
@@ -1932,32 +1934,37 @@ void path_sort(path_v *paths)
 void path_stats(asg_t *asg, path_v *paths, FILE *fo)
 {
     uint32_t i, j, n;
-    int nd_i, nd_n, nd_l, nd_w;
+    int nd_i, nd_n, nd_l, nd_w, nd_e;
     uint64_t max_l;
+    uint32_t max_e;
     double max_wl;
     path_t path;
 
     nd_n = 0;
     max_l = 0;
+    max_e = 0;
     max_wl = .0;
     for (i = 0; i < paths->n; ++i) {
         if (paths->a[i].nv > nd_n)
             nd_n = paths->a[i].nv;
         if (paths->a[i].len > max_l)
             max_l = paths->a[i].len;
+        if (paths->a[i].ec > max_e)
+            max_e = paths->a[i].ec;
         if (paths->a[i].wlen > max_wl)
             max_wl = paths->a[i].wlen;
     }
     nd_i = floor(log10(fabs(paths->n))) + 1;
     nd_n = floor(log10(fabs(nd_n))) + 1;
     nd_l = floor(log10(fabs(max_l))) + 1;
+    nd_e = floor(log10(fabs(max_e))) + 1;
     nd_w = floor(log10(fabs(max_wl))) + 3;
 
     for (i = 0; i < paths->n; ++i) {
         path = paths->a[i];
         n = path.nv;
-        fprintf(fo, "%c %-*u %s %-*u %-*u %-*.1f %s%c", path.best? '*' : '#', nd_i, i, path.circ? "circle" : "linear",
-                nd_n, n, nd_l, path.len, nd_w, path.wlen, asg->seg[path.v[0]>>1].name, "+-"[path.v[0]&1]);
+        fprintf(fo, "%c %-*u %s %-*u %-*u %-*.1f %-*u %s%c", path.best? '*' : '#', nd_i, i, path.circ? "circle" : "linear",
+                nd_n, n, nd_l, path.len, nd_w, path.wlen, nd_e, path.ec, asg->seg[path.v[0]>>1].name, "+-"[path.v[0]&1]);
         for (j = 1; j < n; ++j)
             fprintf(fo, ",%s%c", asg->seg[path.v[j]>>1].name, "+-"[path.v[j]&1]);
         fprintf(fo, "\n");
@@ -2034,11 +2041,11 @@ void print_seq(asg_t *asg, path_t *path, FILE *fo, int id, int force_linear, int
     }
     
     if (path->sid)
-        fprintf(fo, ">%s\tlength=%u wlength=%.1f nv=%u circular=%s path=%s%c", path->sid, path->len + lo, path->wlen + (double) cov * lo,
-                path->nv, (force_linear || !path->circ)? "false" : "true", asg->seg[path->v[0]>>1].name, "+-"[path->v[0]&1]);
+        fprintf(fo, ">%s\tlength=%u wlength=%.1f nv=%u ec=%u circular=%s path=%s%c", path->sid, path->len + lo, path->wlen + (double) cov * lo,
+                path->nv, path->ec, (force_linear || !path->circ)? "false" : "true", asg->seg[path->v[0]>>1].name, "+-"[path->v[0]&1]);
     else
-        fprintf(fo, ">ctg%06d%c\tlength=%u wlength=%.1f nv=%u circular=%s path=%s%c", id, (force_linear || !path->circ)? 'l' : 'c', 
-                path->len + lo, path->wlen + (double) cov * lo, path->nv, (force_linear || !path->circ)? "false" : "true", 
+        fprintf(fo, ">ctg%06d%c\tlength=%u wlength=%.1f nv=%u ec=%u circular=%s path=%s%c", id, (force_linear || !path->circ)? 'l' : 'c', 
+                path->len + lo, path->wlen + (double) cov * lo, path->nv, path->ec, (force_linear || !path->circ)? "false" : "true", 
                 asg->seg[path->v[0]>>1].name, "+-"[path->v[0]&1]);
 
     for (i = 1; i < n; ++i)
