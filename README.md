@@ -32,6 +32,10 @@ Options:
  
   --min-edge-cov INT   remove edges with coverage smaller than INT [0]
   --min-seq-cov  FLOAT remove sequences with coverage smaller than FLOAT [0.0]
+  --neighbour-steps  FLOAT
+                       use min-seq-cov of 1 for nodes adjacent to covered nodes [0]
+  --bub-check          add coverage to bubbles when both in and out are also covered [0]
+  --edge-to-seq        migrate edge coverage to seq coverage [0]
 
   -o FILE              write output to a file [stdout]
   -v INT               verbose level [0]

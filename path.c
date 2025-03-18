@@ -350,7 +350,172 @@ static void make_seg_dups(asg_t *asg, kh_u32_t *seg_dups, uint32_t s, uint32_t c
 
 #define EM_MAX_ITER 1000
 
-double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int **_copy_number)
+// Any copy_number 0 nodes that have used arc data has their copy_number
+// set to 1 anyway.  This can happen where the kmer data wasn't strong
+// enough, but we've observed some transitions.  Permit minor usage count.
+void graph_sequence_coverage_edge_rescue(asg_t *asg, int *copy_number) {
+    asmg_t *g = asg->asmg;
+    uint32_t n_seg = asg->n_seg;
+
+    for (int dir = 0; dir < 2; dir++) {
+        for (int i = 0; i < n_seg; ++i) {
+            if (g->vtx[i].del) continue;
+            int v = (i<<1) | dir;
+            int nv = asmg_arc_n(g, v);
+            asmg_arc_t *av = asmg_arc_a(g, v);
+            for (int j = 0; j < nv; j++) {
+                if (av[j].del) continue;
+                if (!av[j].cov) continue;
+                int from = av[j].v>>1;
+                int to   = av[j].w>>1;
+                //fprintf(stderr, "%s->%s ec %d\n", asg->seg[from].name, asg->seg[to].name, av[j].cov);
+                if (copy_number[from] && !copy_number[to]) {
+                    fprintf(stderr, "Incr copy in %s\n", asg->seg[to].name);
+                    copy_number[to]=1;
+                }
+                if (copy_number[to] && !copy_number[from]) {
+                    fprintf(stderr, "Incr copy in %s\n", asg->seg[from].name);
+                    copy_number[from]=1;
+                }
+            }
+        }
+    }
+}
+
+// Similarly look for trivial bubbles A->{P,Q}->B where both paths are
+// unknown and A and B are in use.  Our choice is to break the path up
+// and give a sub-string, or guess (which is what this code encourages).
+//
+// However, if one of P and Q *is* known, then delete the other node
+// and force it to never to be used.
+int graph_sequence_coverage_pick_bubbles(asg_t *asg, int *copy_number) {
+    asmg_t *g = asg->asmg;
+    uint32_t n_seg = asg->n_seg;
+ 
+    // Similarly look for trivial bubbles A->{P,Q}->B where both paths are
+    // unknown and A and B are in use.  Our choice is to break the path up
+    // and give a sub-string, or guess (which is what this code encourages).
+    //
+    // However, if one of P and Q *is* known, then delete the other node
+    // and force it to never to be used.
+
+    // Step 1: allocate and fill out an adjacency matrix
+    int **link_to   = malloc(n_seg * sizeof(int *));
+    int **link_from = malloc(n_seg * sizeof(int *));
+    if (!link_to || !link_from)
+        return -1; // mem leak, but exiting
+    int err = 0;
+    for (int i = 0; i < n_seg; i++) {
+        link_to[i]   = calloc(n_seg, sizeof(int));
+        link_from[i] = calloc(n_seg, sizeof(int));
+        err |= (!link_to[i] || !link_from[i]);
+    }
+    if (err)
+        return -1; // mem leak, but exiting
+
+    for (int dir = 0; dir < 2; dir++) {
+        for (int i = 0; i < n_seg; i++) {
+            if (g->vtx[i].del) continue;
+            int vtx_cov = g->vtx[i].cov;
+            int v = (i<<1) | dir;
+            int nv = asmg_arc_n(g, v);
+            asmg_arc_t *av = asmg_arc_a(g, v);
+            for (int j = 0; j < nv; j++) {
+                if (av[j].del) continue;
+
+                //if (!av[j].cov) continue;
+            
+                int from = av[j].v>>1;
+                int to   = av[j].w>>1;
+
+                printf("Edge %d -> %d\n", from, to);
+ 
+                if (vtx_cov)
+                    link_from[from][to]++;
+                
+                if (!g->vtx[to].del && g->vtx[to].cov)
+                    link_to[from][to]++;
+            }
+        }
+
+        break; // one dir only to remove A>B>C and C>B>A dups
+    }
+
+    // Step 2: Identify trivial bubble routes to rescue.
+    for (int l = 0; l < n_seg; l++) {
+        for (int r = 0; r < n_seg; r++) {
+            if (l == r) continue;
+            int found = 0, routes = 0, bypass;
+            //bypass = (link_from[l][r] || link_to[l][r]);
+            bypass = 0; // the above isn't helping.
+            for (int i = 0; i < n_seg; i++) {
+                if (i == l || i == r) continue;
+                if (!link_from[l][i] || !link_to[i][r]) continue;
+                printf("Link %d -> %d -> %d, covered = %d,%d\n",
+                       l, i, r, found, (int)copy_number[i]);
+                found += copy_number[i]>0;
+                routes++;
+            }
+
+            if (routes && !found && !bypass) {
+                for (int i = 0; i < n_seg; i++) {
+                    if (i == l || i == r) continue;
+                    if (!link_from[l][i] || !link_to[i][r]) continue;
+                    printf("Add copy to middle %d -> %d -> %d\n", l, i, r);
+                    copy_number[i] = 1;
+                }
+            } else if (routes && (found || bypass)) {
+                // Explicitly mark some nodes as being excluded as we have
+                // an observed path.
+                for (int i = 0; i < n_seg; i++) {
+                    if (i == l || i == r) continue;
+                    if (!link_from[l][i] || !link_to[i][r]) continue;
+                    //copy_number[i] = -1;
+                    g->vtx[i].del = 1;
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < n_seg; i++) {
+        free(link_to[i]);
+        free(link_from[i]);
+    }
+    free(link_to);
+    free(link_from);
+
+    return 0;
+}
+
+void graph_sequence_coverage_add_neighbours(asg_t *asg, int *copy_number) {
+    asmg_t *g = asg->asmg;
+    uint32_t n_seg = asg->n_seg;
+
+    for (int dir = 0; dir < 2; dir++) {
+        for (int i = 0; i < n_seg; ++i) {
+            if (g->vtx[i].del) continue;
+            int v = (i<<1) | dir;
+            int nv = asmg_arc_n(g, v);
+            asmg_arc_t *av = asmg_arc_a(g, v);
+            for (int j = 0; j < nv; j++) {
+                if (av[j].del) continue;
+                int from = av[j].v>>1;
+                int to   = av[j].w>>1;
+                //fprintf(stderr, "%s->%s ec %d\n", asg->seg[from].name, asg->seg[to].name, av[j].cov);
+                if (copy_number[from] && !copy_number[to]) {
+                    fprintf(stderr, "Incr copy in %s\n", asg->seg[to].name);
+                    copy_number[to]=1;
+                }
+                if (copy_number[to] && !copy_number[from]) {
+                    fprintf(stderr, "Incr copy in %s\n", asg->seg[from].name);
+                    copy_number[from]=1;
+                }
+            }
+        }
+    }
+}
+
+double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int edge_to_seq, int bub_check, int neighbour_steps, int **_copy_number)
 {
     uint32_t i, n_seg, iter;
     int *copy_number;
@@ -403,6 +568,22 @@ double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, 
                 copy_number[i] = MIN(MAX(min_copy, lround((double) (g->vtx[i].cov) / avg_cov)), max_copy);
         }
     }
+
+    // Any copy_number 0 nodes that have used arc data has their copy_number
+    // set to 1 anyway.  This can happen where the kmer data wasn't strong
+    // enough, but we've observed some transitions.  Permit minor usage count.
+    if (edge_to_seq)
+        graph_sequence_coverage_edge_rescue(asg, copy_number);
+
+    if (bub_check)
+        if (graph_sequence_coverage_pick_bubbles(asg, copy_number) < 0)
+            abort();
+
+    // Final method.  Neighbour boosting.  The benefit to doing this now
+    // is we can still recognise the deleted node assessment from the previous
+    // step.  Add coverage to x in A->x and x->A if A has coverage.
+    for (int i = 0; i < neighbour_steps; i++)
+        graph_sequence_coverage_add_neighbours(asg, copy_number);
 
 #ifdef DEBUG_SEG_COPY_EST
     fprintf(stderr, "[DEBUG_SEG_COPY_EST::%s] sequence copy number estimation finished in %u iterations with an average sequence coverage %.3f\n",
@@ -2262,7 +2443,7 @@ int clean_graph_by_sequence_coverage(asg_t *asg, double min_cf, int max_copy, in
         if (visited[i] || g->vtx[i].del) continue;
         asg->asmg = asg_make_asmg_copy(g, 0);
         asmg_subgraph(asg->asmg, &i, 1, 0, 0, 0, 1);
-        avg_cov = graph_sequence_coverage_precise(asg, min_cf, 0, max_copy, 0);
+        avg_cov = graph_sequence_coverage_precise(asg, min_cf, 0, max_copy, 0,0,0, 0);
         if (verbose > 1)
             fprintf(stderr, "[M::%s] subgraph seeding from %s per copy average coverage: %.3f\n", 
                     __func__, asg->seg[i].name, avg_cov);
