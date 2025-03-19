@@ -487,7 +487,8 @@ int graph_sequence_coverage_pick_bubbles(asg_t *asg, int *copy_number) {
     return 0;
 }
 
-void graph_sequence_coverage_add_neighbours(asg_t *asg, int *copy_number) {
+void graph_sequence_coverage_add_neighbours(asg_t *asg, int *copy_number,
+                                            int min_length) {
     asmg_t *g = asg->asmg;
     uint32_t n_seg = asg->n_seg;
 
@@ -502,11 +503,11 @@ void graph_sequence_coverage_add_neighbours(asg_t *asg, int *copy_number) {
                 int from = av[j].v>>1;
                 int to   = av[j].w>>1;
                 //fprintf(stderr, "%s->%s ec %d\n", asg->seg[from].name, asg->seg[to].name, av[j].cov);
-                if (copy_number[from] && !copy_number[to]) {
+                if (copy_number[from] && !copy_number[to] && g->vtx[to].len < min_length) {
                     fprintf(stderr, "Incr copy in %s\n", asg->seg[to].name);
                     copy_number[to]=1;
                 }
-                if (copy_number[to] && !copy_number[from]) {
+                if (copy_number[to] && !copy_number[from] && g->vtx[from].len < min_length) {
                     fprintf(stderr, "Incr copy in %s\n", asg->seg[from].name);
                     copy_number[from]=1;
                 }
@@ -515,7 +516,7 @@ void graph_sequence_coverage_add_neighbours(asg_t *asg, int *copy_number) {
     }
 }
 
-double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int edge_to_seq, int bub_check, int neighbour_steps, int **_copy_number)
+double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int edge_to_seq, int bub_check, int neighbour_steps, int min_neighbour_len, int **_copy_number)
 {
     uint32_t i, n_seg, iter;
     int *copy_number;
@@ -583,7 +584,7 @@ double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, 
     // is we can still recognise the deleted node assessment from the previous
     // step.  Add coverage to x in A->x and x->A if A has coverage.
     for (int i = 0; i < neighbour_steps; i++)
-        graph_sequence_coverage_add_neighbours(asg, copy_number);
+        graph_sequence_coverage_add_neighbours(asg, copy_number, min_neighbour_len);
 
 #ifdef DEBUG_SEG_COPY_EST
     fprintf(stderr, "[DEBUG_SEG_COPY_EST::%s] sequence copy number estimation finished in %u iterations with an average sequence coverage %.3f\n",
@@ -2443,7 +2444,7 @@ int clean_graph_by_sequence_coverage(asg_t *asg, double min_cf, int max_copy, in
         if (visited[i] || g->vtx[i].del) continue;
         asg->asmg = asg_make_asmg_copy(g, 0);
         asmg_subgraph(asg->asmg, &i, 1, 0, 0, 0, 1);
-        avg_cov = graph_sequence_coverage_precise(asg, min_cf, 0, max_copy, 0,0,0, 0);
+        avg_cov = graph_sequence_coverage_precise(asg, min_cf, 0, max_copy, 0,0,0,0, 0);
         if (verbose > 1)
             fprintf(stderr, "[M::%s] subgraph seeding from %s per copy average coverage: %.3f\n", 
                     __func__, asg->seg[i].name, avg_cov);

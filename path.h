@@ -95,7 +95,7 @@ void asg_print_fa(asg_t *g, FILE *fo, int line_wd);
 
 void path_destroy(path_t *path);
 void path_v_destroy(path_v *path);
-double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int edge_to_seq, int bub_check, int neighbour_steps, int **copy_number);
+double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int edge_to_seq, int bub_check, int neighbour_steps, int min_neighbour_len, int **copy_number);
 int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage, double *_adjusted_cov, int *copy_number, int max_copy, int max_round);
 kh_u32_t *sequence_duplication_by_copy_number(asg_t *asg, int *copy_number, int allow_del);
 path_t make_path_from_str(asg_t *asg, char *path_str, char *sid);

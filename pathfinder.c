@@ -224,7 +224,7 @@ static void asg_clean(asg_t *asg, uint32_t min_ec, uint32_t min_sc)
     asmg_finalize(g, 0);
 }
 
-static int pathfinder(char *asg_file, int min_copy, int max_copy, int min_edge_cov, int min_ec, double min_sc, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int neighbour_steps, int bub_check, int edge_to_seq, int VERBOSE)
+static int pathfinder(char *asg_file, int min_copy, int max_copy, int min_edge_cov, int min_ec, double min_sc, double min_cfrac, int max_path, int do_part, int do_adjust, FILE *out_file, char *s_source, char *s_target, int neighbour_steps, int min_neighbour_len, int bub_check, int edge_to_seq, int VERBOSE)
 {   
     asg_t *asg;
     int64_t source, target;
@@ -282,7 +282,7 @@ static int pathfinder(char *asg_file, int min_copy, int max_copy, int min_edge_c
         
         double avg_coverage, adjusted_avg_coverage;
         // initial guess of sequence copy numbers
-        avg_coverage = graph_sequence_coverage_precise(asg_copy, 0, min_copy, max_copy, edge_to_seq, bub_check, neighbour_steps, &copy_number);
+        avg_coverage = graph_sequence_coverage_precise(asg_copy, 0, min_copy, max_copy, edge_to_seq, bub_check, neighbour_steps, min_neighbour_len, &copy_number);
         if (VERBOSE > 1) {
             fprintf(stderr, "[M::%s] initial copy number estimation\n", __func__);
             print_copy_number(asg_copy, avg_coverage, copy_number, mstr);
@@ -384,6 +384,7 @@ static ko_longopt_t long_options[] = {
     { "min-edge-cov",   ko_required_argument, 304 },
     { "min-seq-cov",    ko_required_argument, 305 },
     { "neighbour-steps",ko_required_argument, 306 },
+    { "neighbour-len",  ko_required_argument, 'L' },
     { "bub-check",      ko_no_argument,       307 },
     { "edge-to-seq",    ko_no_argument,       308 },
     { "max-copy",       ko_required_argument, 'c' },
@@ -396,10 +397,10 @@ static ko_longopt_t long_options[] = {
 
 int main(int argc, char *argv[])
 {
-    const char *opt_str = "ac:d:hN:o:pv:VC:X:e:";
+    const char *opt_str = "ac:d:hN:o:pv:VC:X:e:L:";
     ketopt_t opt = KETOPT_INIT;
     int c, min_copy, max_copy, max_path, min_ec, min_edge_cov, do_part, do_adjust, ret = 0;
-    int edge_to_seq, bub_check, neighbour_steps;
+    int edge_to_seq, bub_check, neighbour_steps, min_neighbour_len = 0;
     FILE *fp_help;
     char *out_file, *ec_tag, *kc_tag, *sc_tag, *source, *target;
     double min_cfrac, min_sc;
@@ -442,6 +443,7 @@ int main(int argc, char *argv[])
         else if (c == 304) min_ec = atoi(opt.arg);
         else if (c == 305) min_sc = atof(opt.arg);
         else if (c == 306) neighbour_steps = atoi(opt.arg);
+        else if (c == 'L') min_neighbour_len = atoi(opt.arg);
         else if (c == 307) bub_check = 1;
         else if (c == 308) edge_to_seq = 1;
         else if (c == 'v') VERBOSE = atoi(opt.arg);
@@ -481,6 +483,7 @@ int main(int argc, char *argv[])
         fprintf(fp_help, "  --min-seq-cov  FLOAT remove sequences with coverage smaller than FLOAT [%.1f]\n", min_sc);
         fprintf(fp_help, "  --neighbour-steps  FLOAT\n");
         fprintf(fp_help, "                       use min-seq-cov of 1 for nodes adjacent to covered nodes [%d]\n", neighbour_steps);
+        fprintf(fp_help, "  --neighbour-len INT  minimum length of node in --neigbour-steps [0]\n");
         fprintf(fp_help, "  --bub-check          add coverage to bubbles when both in and out are also covered [%d]\n", bub_check);
         fprintf(fp_help, "  --edge-to-seq        migrate edge coverage to seq coverage [%d]\n", edge_to_seq);
         fprintf(fp_help, " \n");
@@ -541,7 +544,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    ret = pathfinder(argv[opt.ind], min_copy, max_copy, min_edge_cov, min_ec, min_sc, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, neighbour_steps, bub_check, edge_to_seq, VERBOSE);
+    ret = pathfinder(argv[opt.ind], min_copy, max_copy, min_edge_cov, min_ec, min_sc, min_cfrac, max_path, do_part, do_adjust, stdout, source, target, neighbour_steps, min_neighbour_len, bub_check, edge_to_seq, VERBOSE);
     
     if (ret) {
         fprintf(stderr, "[E::%s] failed to analysis the GFA file\n", __func__);
