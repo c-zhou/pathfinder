@@ -17,8 +17,10 @@ directory to compile.
 ```
 Usage: pathfinder [options] <file>[.gfa[.gz]] [<source>[+|-] [<target>[+|-]]]
 Options:
+  -e INT               minimum L edge coverage [1]
   -c INT               minimum copy number of sequences to consider [1]
   -C INT               maximum copy number of sequences to consider [10]
+  -X INT               override the initial depth computation [0]
   -d FLOAT             prefer a circular path if length >= FLOAT * linear length [1.00]
   -p                   do graph partitioning if possible
   -a                   adjust seuqnece copy number estimation by graph structure
@@ -30,6 +32,10 @@ Options:
  
   --min-edge-cov INT   remove edges with coverage smaller than INT [0]
   --min-seq-cov  FLOAT remove sequences with coverage smaller than FLOAT [0.0]
+  --neighbour-steps  FLOAT
+                       use min-seq-cov of 1 for nodes adjacent to covered nodes [0]
+  --bub-check          add coverage to bubbles when both in and out are also covered [0]
+  --edge-to-seq        migrate edge coverage to seq coverage [0]
 
   -o FILE              write output to a file [stdout]
   -v INT               verbose level [0]

@@ -82,7 +82,7 @@ extern "C" {
 asg_t *asg_init();
 void asg_destroy(asg_t *g);
 uint32_t asg_name2id(asg_t *g, char *name);
-asg_t *asg_read(const char *fn);
+asg_t *asg_read(const char *fn, int min_s_cov, int min_l_cov);
 asg_t *asg_make_copy(asg_t *g);
 asmg_t *asg_make_asmg_copy(asmg_t *g, asmg_t *_g);
 uint32_t asg_add_seg(asg_t *g, char *name, int allow_dups);
@@ -95,7 +95,7 @@ void asg_print_fa(asg_t *g, FILE *fo, int line_wd);
 
 void path_destroy(path_t *path);
 void path_v_destroy(path_v *path);
-double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int **copy_number);
+double graph_sequence_coverage_precise(asg_t *asg, double min_cf, int min_copy, int max_copy, int edge_to_seq, int bub_check, int neighbour_steps, int min_neighbour_len, int **copy_number);
 int adjust_sequence_copy_number_by_graph_layout(asg_t *asg, double seq_coverage, double *_adjusted_cov, int *copy_number, int max_copy, int max_round);
 kh_u32_t *sequence_duplication_by_copy_number(asg_t *asg, int *copy_number, int allow_del);
 path_t make_path_from_str(asg_t *asg, char *path_str, char *sid);
